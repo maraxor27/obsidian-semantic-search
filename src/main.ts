@@ -1,15 +1,17 @@
-import { Plugin, WorkspaceLeaf } from 'obsidian';
+import { Notice, Plugin, TAbstractFile, TFile, WorkspaceLeaf } from 'obsidian';
 import {
   DEFAULT_SETTINGS,
   SemanticSettings,
   SemanticSettingTab,
 } from './settings';
 import { SemanticSearchView, VIEW_TYPE_SEMANTIC } from './view';
-import { Indexer } from './indexer';
+import { IndexStatus, Indexer } from './indexer';
 
 export default class SemanticPlugin extends Plugin {
   settings!: SemanticSettings;
   indexer!: Indexer;
+  private statusBarEl!: HTMLElement;
+  private debounceTimers = new Map<string, number>();
 
   async onload() {
     await this.loadSettings();
@@ -37,18 +39,32 @@ export default class SemanticPlugin extends Plugin {
     // Settings tab
     this.addSettingTab(new SemanticSettingTab(this.app, this));
 
+    // Status bar: shows indexing progress, click to rebuild
+    this.statusBarEl = this.addStatusBarItem();
+    this.statusBarEl.addClass('mod-clickable');
+    this.statusBarEl.setAttr('aria-label', 'Semantic index status');
+    this.statusBarEl.setAttr('title', 'Click to rebuild the semantic index');
+    this.statusBarEl.addEventListener('click', () => {
+      void this.refreshIndex();
+    });
+    this.indexer.onStatusChange = (status) => this.renderStatusBar(status);
+    this.renderStatusBar(this.indexer.getStatus());
+
     // Index on load
     this.indexer.indexAll(3).catch(console.error);
 
     // File change handlers
     this.registerEvent(this.app.vault.on('modify', (file) => this.onFileChange(file)));
     this.registerEvent(this.app.vault.on('create', (file) => this.onFileChange(file)));
-    this.registerEvent(this.app.vault.on('rename', (file, oldPath) => this.onFileChange(file)));
+    this.registerEvent(this.app.vault.on('rename', (file, oldPath) => this.onFileRename(file, oldPath)));
     this.registerEvent(this.app.vault.on('delete', (file) => this.onFileDelete(file)));
   }
 
   onunload() {
-    // cleanup handled by registerEvent
+    for (const timer of this.debounceTimers.values()) {
+      window.clearTimeout(timer);
+    }
+    this.debounceTimers.clear();
   }
 
   async loadSettings() {
@@ -60,9 +76,20 @@ export default class SemanticPlugin extends Plugin {
   }
 
   async refreshIndex() {
-    // Rebuild index from scratch
-    const results = await this.indexer.indexAll(3);
-    console.log(`Semantic index refreshed: ${results.length} files indexed`);
+    if (this.indexer.getStatus().state === 'indexing') {
+      new Notice('Indexing already in progress');
+      return;
+    }
+    // Rebuild index from scratch; the status bar reflects the result
+    await this.indexer.indexAll(3);
+  }
+
+  private renderStatusBar(status: IndexStatus) {
+    if (status.state === 'indexing') {
+      this.statusBarEl.setText(status.total > 1 ? `Indexing ${status.done}/${status.total}…` : 'Indexing…');
+    } else {
+      this.statusBarEl.setText(`Index ready (${this.indexer.getCache().length})`);
+    }
   }
 
   async activateView() {
@@ -76,23 +103,38 @@ export default class SemanticPlugin extends Plugin {
       leaf = newLeaf ?? null;
       if (leaf) await leaf.setViewState({ type: VIEW_TYPE_SEMANTIC, active: true });
     }
-    if (leaf) workspace.revealLeaf(leaf);
+    if (leaf) void workspace.revealLeaf(leaf);
   }
 
-  private async onFileChange(file: any) {
-    if (!file || file.extension !== 'md') return;
-    const debounceMs = this.settings.debounceMs;
-    const key = file.path;
-    if (this.indexer && 'debounceMap' in this) {
-      // simple debounce via setTimeout
-      if ((this as any).debounceTimer) clearTimeout((this as any).debounceTimer);
-      (this as any).debounceTimer = setTimeout(async () => {
-        await this.indexer.indexFile(file);
-      }, debounceMs);
+  private onFileChange(file: TAbstractFile) {
+    if (!(file instanceof TFile) || file.extension !== 'md') return;
+    this.scheduleIndex(file.path, file);
+  }
+
+  private onFileRename(file: TAbstractFile, oldPath: string) {
+    this.cancelScheduled(oldPath);
+    this.indexer.removeFile(oldPath);
+    this.onFileChange(file);
+  }
+
+  private onFileDelete(file: TAbstractFile) {
+    this.cancelScheduled(file.path);
+    this.indexer.removeFile(file.path);
+  }
+
+  private scheduleIndex(path: string, file: TFile) {
+    this.cancelScheduled(path);
+    this.debounceTimers.set(path, window.setTimeout(() => {
+      this.debounceTimers.delete(path);
+      void this.indexer.indexFile(file).catch(console.error);
+    }, this.settings.debounceMs));
+  }
+
+  private cancelScheduled(path: string) {
+    const timer = this.debounceTimers.get(path);
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      this.debounceTimers.delete(path);
     }
-  }
-
-  private onFileDelete(file: any) {
-    // TODO: remove from cache
   }
 }

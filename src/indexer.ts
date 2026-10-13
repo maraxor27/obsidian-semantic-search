@@ -31,15 +31,73 @@ class TextChunk {
   }
 }
 
+export type IndexerState = 'idle' | 'indexing';
+
+export interface IndexStatus {
+  state: IndexerState;
+  /** Files processed so far across all active operations. */
+  done: number;
+  /** Files queued across all active operations. */
+  total: number;
+}
+
+interface IndexOp {
+  done: number;
+  total: number;
+}
+
 export class Indexer {
   private app: App;
   private settings: SemanticSettings;
   private cache: Map<string, IndexedFile> = new Map();
   private embeddingCache: Record<string, IndexedFile> = {};
+  private status: IndexStatus = { state: 'idle', done: 0, total: 0 };
+  private activeOps = new Map<number, IndexOp>();
+  private nextOpId = 1;
+
+  /** Called whenever the index status changes. */
+  onStatusChange: ((status: IndexStatus) => void) | null = null;
 
   constructor(app: App, settings: SemanticSettings) {
     this.app = app;
     this.settings = settings;
+  }
+
+  getStatus(): IndexStatus {
+    return this.status;
+  }
+
+  /**
+   * Register an indexing operation. Progress from concurrent operations
+   * (full reindex + per-file updates) is aggregated in the status.
+   */
+  private beginOp(total: number): number {
+    const id = this.nextOpId++;
+    this.activeOps.set(id, { done: 0, total });
+    this.recomputeStatus();
+    return id;
+  }
+
+  private updateOp(id: number, done: number): void {
+    const op = this.activeOps.get(id);
+    if (op) op.done = done;
+    this.recomputeStatus();
+  }
+
+  private endOp(id: number): void {
+    this.activeOps.delete(id);
+    this.recomputeStatus();
+  }
+
+  private recomputeStatus(): void {
+    let done = 0;
+    let total = 0;
+    for (const op of this.activeOps.values()) {
+      done += op.done;
+      total += op.total;
+    }
+    this.status = { state: this.activeOps.size > 0 ? 'indexing' : 'idle', done, total };
+    this.onStatusChange?.(this.status);
   }
 
   async loadCache(): Promise<void> {
@@ -115,7 +173,17 @@ export class Indexer {
     }
   }
 
+  /** Index a single file, reporting progress to the status. */
   async indexFile(file: TFile): Promise<IndexedFile | null> {
+    const opId = this.beginOp(1);
+    try {
+      return await this.indexFileUntracked(file);
+    } finally {
+      this.endOp(opId);
+    }
+  }
+
+  private async indexFileUntracked(file: TFile): Promise<IndexedFile | null> {
     if (!shouldIndexFile(file, this.settings.includeFolders, this.settings.excludeFolders, this.settings.excludePatterns)) {
       return null;
     }
@@ -135,18 +203,36 @@ export class Indexer {
   }
 
   async indexAll(concurrency = 3): Promise<IndexedFile[]> {
-    const files = this.app.vault.getMarkdownFiles();
+    const queue = this.app.vault.getMarkdownFiles().filter((file) =>
+      shouldIndexFile(file, this.settings.includeFolders, this.settings.excludeFolders, this.settings.excludePatterns),
+    );
     const results: IndexedFile[] = [];
-    const queue = [...files];
+    const opId = this.beginOp(queue.length);
+    let processed = 0;
     const workers = Array.from({ length: concurrency }, async () => {
       while (queue.length) {
         const file = queue.shift()!;
-        const indexed = await this.indexFile(file);
-        if (indexed) results.push(indexed);
+        try {
+          const indexed = await this.indexFileUntracked(file);
+          if (indexed) results.push(indexed);
+        } catch (e) {
+          console.error(`Failed to index ${file.path}`, e);
+        } finally {
+          processed++;
+          this.updateOp(opId, processed);
+        }
       }
     });
     await Promise.all(workers);
+    this.endOp(opId);
     return results;
+  }
+
+  /** Remove a file from the index (e.g. after deletion or rename). */
+  removeFile(path: string): void {
+    this.cache.delete(path);
+    delete this.embeddingCache[path];
+    if (this.activeOps.size === 0) this.recomputeStatus();
   }
 
   getCache(): IndexedFile[] {

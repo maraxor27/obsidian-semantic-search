@@ -2,7 +2,7 @@
 	"id": "semantic-search",
 	"name": "Semantic Search",
 	"version": "0.0.1",
-	"minAppVersion": "1.0.0",
+	"minAppVersion": "1.7.2",
 	"description": "Semantic search over vault notes using OpenAI-compatible embeddings with a sidebar view.",
 	"author": "Simon Laureti",
 	"authorUrl": "",
