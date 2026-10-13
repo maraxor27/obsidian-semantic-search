@@ -11,19 +11,37 @@ Uses Obsidian CSS variables so the view follows the user's theme.
 	margin-bottom: 8px;
 }
 
-.semantic-search-bar {
+.semantic-search-bar-container {
 	display: flex;
 	align-items: center;
 	gap: 2px;
-	padding: 2px 4px 2px 8px;
+	padding: 10px 4px 2px 8px;
 	border-radius: var(--input-radius);
-	border: 1px solid var(--background-modifier-border);
-	background: var(--background-primary);
+}
+
+.semantic-search-bar {
+	display: flex;
+	flex-grow: 1;
+	align-items: center;
+	gap: 2px;
+	border-radius: 9999px;
+	background: var(--background-secondary-alt);
+	padding: 0px 8px;
+	margin: 4px 4px;
+	min-width: 0px;
+	width: auto;
+	border-width: 1px;
+	border-color: var(--background-secondary);
+	border-style: solid;
+}
+
+.semantic-search-bar:hover {
+	border-color: var(--text-faint);
 }
 
 .semantic-search-bar:focus-within {
-	border-color: var(--interactive-accent);
-	color: var(--text-accent) !important;
+	border-color: var(--text-faint);
+	border-width: 2px;
 }
 
 .semantic-search-icon {
@@ -49,22 +67,18 @@ Uses Obsidian CSS variables so the view follows the user's theme.
 	box-shadow: none;
 	color: var(--text-muted);
 	cursor: pointer;
-	padding: 4px 6px;
+	padding: 0px 4px;
 	border-radius: var(--radius-s);
 	font-size: var(--font-ui-small);
-	line-height: 1;
+	line-height: 0.8;
 	border-radius: var(--button-radius);
 }
 
 .semantic-search-button:hover {
 	background: var(--background-modifier-hover);
-	color: var(--text-normal);
+	color: var(--text-muted);
 }
 
-/* .semantic-search-button.is-active {
-	color: var(--text-on-accent);
-	background: var(--interactive-accent);
-} */
 .semantic-search-button.is-active {
 	color: var(--interactive-accent);
 }
@@ -141,4 +155,10 @@ Uses Obsidian CSS variables so the view follows the user's theme.
 .semantic-search-result-score {
 	color: var(--text-faint);
 	margin-top: 2px;
+}
+
+.semantic-no-result {
+	color: var(--text-faint);
+	font-size: var(--font-ui-small);
+	padding: 0px 15px 
 }

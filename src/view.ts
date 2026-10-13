@@ -37,17 +37,18 @@ export class SemanticSearchView extends ItemView {
     const wrapper = containerEl.createDiv('semantic-search-wrapper');
 
     // Search bar (styled after the native core search header)
-    const bar = wrapper.createDiv('semantic-search-bar');
+    const bar = wrapper.createDiv('semantic-search-bar-container');
+    const search = bar.createDiv('semantic-search-bar');
 
-    const searchIcon = bar.createSpan('semantic-search-icon');
+    const searchIcon = search.createSpan('semantic-search-icon');
     setIcon(searchIcon, 'search');
 
-    this.queryInput = bar.createEl('input', {
+    this.queryInput = search.createEl('input', {
       cls: 'semantic-search-input',
       attr: { type: 'text', placeholder: 'Search notes...', 'aria-label': 'Semantic search query' },
     });
 
-    this.clearBtn = bar.createEl('button', {
+    this.clearBtn = search.createEl('button', {
       cls: 'semantic-search-button',
       attr: { type: 'button', 'aria-label': 'Clear search' },
     });
@@ -101,6 +102,8 @@ export class SemanticSearchView extends ItemView {
     this.queryInput.addEventListener('input', () => this.handleQuery());
     this.nInput.addEventListener('change', () => this.handleQuery());
     this.minInput.addEventListener('change', () => this.handleQuery());
+
+    this.renderResults([]);
   }
 
   async onClose() {
@@ -163,7 +166,10 @@ export class SemanticSearchView extends ItemView {
   private renderResults(results: SearchResult[]) {
     this.resultsEl.empty();
     if (results.length === 0) {
-      this.resultsEl.createEl('p', { text: 'No results' });
+      this.resultsEl.createEl('p', { 
+        cls: 'semantic-no-result', 
+        text: 'No matches found.' 
+      });
       return;
     }
     for (const r of results) {
@@ -172,11 +178,15 @@ export class SemanticSearchView extends ItemView {
       if (r.chunk.headingPath) {
         el.createEl('div', { cls: 'semantic-search-result-heading', text: r.chunk.headingPath });
       }
-      el.createEl('div', { cls: 'semantic-search-result-snippet', text: r.chunk.text.slice(0, 200) + '...' });
+
+      // pre + code combo for multiline strings
+      const pre = el.createEl('pre');
+      const text = r.chunk.text;
+      pre.createEl('code', { cls: 'semantic-search-result-snippet', text: text.slice(0, 200) + (text.length > 200 ? '...' : '') });
       el.createEl('small', { cls: 'semantic-search-result-score', text: `Score: ${r.score.toFixed(3)}` });
       el.addEventListener('click', async () => {
         const file = this.app.vault.getAbstractFileByPath(r.filePath);
-        if (file) this.app.workspace.openLinkText(file.path, '', true);
+        if (file) this.app.workspace.openLinkText(file.path, '', false);
       });
     }
   }

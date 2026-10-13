@@ -3,6 +3,34 @@ import { SemanticSettings } from './settings';
 import { EmbeddingChunk, IndexedFile } from './search';
 import { shouldIndexFile } from './utils/folderFilter';
 
+class TextChunk {
+  private _headers: string[];
+  private _body: string;
+
+  constructor(headers: string[], body: string) {
+    this._headers = headers;
+    this._body = body;
+  }
+
+  get headers(): string[] {
+    return this._headers;
+  }
+
+  get body(): string {
+    return this._body;
+  }
+
+  get text(): string {
+    const headers = this.headers;
+    const length = headers.length;
+    return `${'#'.repeat(length)} ${headers[length-1]}\n${this._body}`;
+  }
+
+  get headingPath() {
+    return this.headers.join(' > ');
+  }
+}
+
 export class Indexer {
   private app: App;
   private settings: SemanticSettings;
@@ -21,42 +49,51 @@ export class Indexer {
     this.cache.clear();
   }
 
-  private chunkText(text: string, maxChars: number, overlap: number): { text: string; headingPath: string }[] {
-    const lines = text.split('\n');
+  private chunkText(text: string, maxChars: number, overlap: number): TextChunk[] {
+    let headerIndex = 0;
     let headingPath = Array<string>(6).fill('');
-    const chunks: { text: string; headingPath: string }[] = [];
+    const chunks: TextChunk[] = [];
     let buffer = '';
+    
     const flush = () => {
+      // Only create a chunk if there is a body.
       if (buffer.trim()) {
-        const heading = headingPath.filter(Boolean).join(' > ');
-        chunks.push({ text: buffer.trim(), headingPath: heading });
-        if (overlap > 0 && buffer.length > overlap) {
-          buffer = buffer.slice(-overlap);
+        chunks.push(new TextChunk(headingPath.slice(0, headerIndex), buffer.trim()));
+        if (overlap > 0 && buffer.length > maxChars) {
+          buffer = '... ' + buffer.slice(-overlap);
         } else {
           buffer = '';
         }
       }
     };
+
+    const lines = text.split('\n');
     for (const line of lines) {
-      const m = line.match(/^(#{1,6})\s+(.*)$/);
-      if (m) {
-        const level = m[1]!.length;
-        const title = m[2]!;
-        for (let i = level - 1; i < 6; i++) headingPath[i] = i === level - 1 ? title : '';
+      const headerMatch = line.match(/^(#{1,6})\s+(.*)$/);
+      if (headerMatch) {
         flush();
-        buffer = `${headingPath.filter(Boolean).join(' > ')}: ${line}\n`;
+
+        const level = headerMatch[1]!.length;
+        const title = headerMatch[2]!;
+
+        headerIndex = level;
+        headingPath[level - 1] = title;
+        for (let i = level; i < 6; i++) headingPath[i] = '';
+        buffer = line + '\n';
         continue;
       }
+
       buffer += line + '\n';
       if (buffer.length > maxChars) flush();
     }
+
     flush();
     return chunks;
   }
 
   private async embedTexts(texts: string[]): Promise<number[][]> {
     const { endpointUrl, apiKey, model } = this.settings;
-    if (!endpointUrl || !apiKey) return texts.map(() => []);
+    if (!endpointUrl) return texts.map(() => []);
     try {
       const resp = await fetch(`${endpointUrl.replace(/\/$/, '')}/embeddings`, {
         method: 'POST',
@@ -88,7 +125,7 @@ export class Indexer {
     const embeddings = await this.embedTexts(texts);
     const chunks: EmbeddingChunk[] = rawChunks.map((c, i) => ({
       id: `${file.path}::${i}`,
-      text: c.text,
+      text: c.body,
       headingPath: c.headingPath,
       embedding: embeddings[i] ?? [],
     }));
