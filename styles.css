@@ -1,8 +1,144 @@
 /*
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
-
-If your plugin does not need CSS, delete this file.
+Semantic Search plugin styles.
+Uses Obsidian CSS variables so the view follows the user's theme.
 
 */
+
+/* --- Search bar (styled after the native core search header) --- */
+
+.semantic-search-wrapper {
+	margin-bottom: 8px;
+}
+
+.semantic-search-bar {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	padding: 2px 4px 2px 8px;
+	border-radius: var(--input-radius);
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-primary);
+}
+
+.semantic-search-bar:focus-within {
+	border-color: var(--interactive-accent);
+	color: var(--text-accent) !important;
+}
+
+.semantic-search-icon {
+	display: flex;
+	align-items: center;
+}
+
+.semantic-search-input {
+	flex: 1;
+	min-width: 0;
+	border: none !important;
+	background: transparent !important;
+	box-shadow: none !important;
+	padding: 4px 2px;
+}
+
+.semantic-search-button {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: transparent;
+	border: none;
+	box-shadow: none;
+	color: var(--text-muted);
+	cursor: pointer;
+	padding: 4px 6px;
+	border-radius: var(--radius-s);
+	font-size: var(--font-ui-small);
+	line-height: 1;
+	border-radius: var(--button-radius);
+}
+
+.semantic-search-button:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+/* .semantic-search-button.is-active {
+	color: var(--text-on-accent);
+	background: var(--interactive-accent);
+} */
+.semantic-search-button.is-active {
+	color: var(--interactive-accent);
+}
+
+/* --- Settings table under the search box, toggled by the sliders button --- */
+
+.semantic-search-settings {
+	margin-top: 4px;
+	width: 100%;
+	background: var(--background-secondary);
+	border: 0px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	overflow: hidden;
+}
+
+.semantic-search-setting-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 4px 8px;
+}
+
+.semantic-search-setting-row label {
+	font-size: var(--font-ui-small);
+}
+
+.semantic-search-setting-row input {
+	font-size: var(--font-ui-small);
+	height: var(--input-height);
+	border-radius: var(--input-radius);
+}
+
+
+.semantic-search-setting-input {
+	width: 70px;
+	text-align: right;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	padding: 2px 6px;
+}
+
+/* --- Results list --- */
+
+.semantic-search-result {
+	padding: 6px 8px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	cursor: pointer;
+	border-radius: var(--radius-s);
+}
+
+.semantic-search-result:hover {
+	background: var(--background-modifier-hover);
+}
+
+.semantic-search-result-heading {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	margin-top: 2px;
+}
+
+.semantic-search-result-snippet {
+	color: var(--text-normal);
+	font-size: var(--font-ui-smaller);
+	margin-top: 2px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+}
+
+.semantic-search-result-score {
+	color: var(--text-faint);
+	margin-top: 2px;
+}

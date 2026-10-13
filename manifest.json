@@ -1,11 +1,11 @@
 {
-	"id": "sample-plugin",
-	"name": "Sample Plugin",
-	"version": "1.0.0",
+	"id": "semantic-search",
+	"name": "Semantic Search",
+	"version": "0.0.1",
 	"minAppVersion": "1.0.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
+	"description": "Semantic search over vault notes using OpenAI-compatible embeddings with a sidebar view.",
+	"author": "Simon Laureti",
+	"authorUrl": "",
+	"fundingUrl": "",
 	"isDesktopOnly": false
 }

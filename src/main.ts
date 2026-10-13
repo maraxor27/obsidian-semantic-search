@@ -1,114 +1,98 @@
+import { Plugin, WorkspaceLeaf } from 'obsidian';
 import {
-	Editor,
-	MarkdownView,
-	MarkdownFileInfo,
-	Modal,
-	Notice,
-	Plugin,
-} from 'obsidian';
-import {
-	DEFAULT_SETTINGS,
-	MyPluginSettings,
-	SampleSettingTab,
+  DEFAULT_SETTINGS,
+  SemanticSettings,
+  SemanticSettingTab,
 } from './settings';
+import { SemanticSearchView, VIEW_TYPE_SEMANTIC } from './view';
+import { Indexer } from './indexer';
 
-// Remember to rename these classes and interfaces!
+export default class SemanticPlugin extends Plugin {
+  settings!: SemanticSettings;
+  indexer!: Indexer;
 
-export default class MyPlugin extends Plugin {
-	settings!: MyPluginSettings;
+  async onload() {
+    await this.loadSettings();
+    this.indexer = new Indexer(this.app, this.settings);
 
-	async onload() {
-		await this.loadSettings();
+    // Register view
+    this.registerView(VIEW_TYPE_SEMANTIC, (leaf) => new SemanticSearchView(leaf, this));
 
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('dice', 'Sample', (_evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
+    // Command to open view
+    this.addCommand({
+      id: 'open-semantic-search',
+      name: 'Open Semantic Search',
+      callback: () => this.activateView(),
+    });
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status bar text');
+    // Command to refresh index
+    this.addCommand({
+      id: 'semantic-refresh-index',
+      name: 'Refresh Semantic Index',
+      callback: async () => {
+        await this.refreshIndex();
+      },
+    });
 
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-modal-simple',
-			name: 'Open modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			},
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'replace-selected',
-			name: 'Replace selected content',
-			editorCallback: (
-				editor: Editor,
-				_ctx: MarkdownView | MarkdownFileInfo,
-			) => {
-				editor.replaceSelection('Sample editor command');
-			},
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-modal-complex',
-			name: 'Open modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView =
-					this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
+    // Settings tab
+    this.addSettingTab(new SemanticSettingTab(this.app, this));
 
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-				return false;
-			},
-		});
+    // Index on load
+    this.indexer.indexAll(3).catch(console.error);
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+    // File change handlers
+    this.registerEvent(this.app.vault.on('modify', (file) => this.onFileChange(file)));
+    this.registerEvent(this.app.vault.on('create', (file) => this.onFileChange(file)));
+    this.registerEvent(this.app.vault.on('rename', (file, oldPath) => this.onFileChange(file)));
+    this.registerEvent(this.app.vault.on('delete', (file) => this.onFileDelete(file)));
+  }
 
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(activeDocument, 'click', (_evt: MouseEvent) => {
-			new Notice('Click');
-		});
+  onunload() {
+    // cleanup handled by registerEvent
+  }
 
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(
-			window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000),
-		);
-	}
+  async loadSettings() {
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()) as SemanticSettings;
+  }
 
-	onunload() {}
+  async saveSettings() {
+    await this.saveData(this.settings);
+  }
 
-	async loadSettings() {
-		this.settings = Object.assign(
-			{},
-			DEFAULT_SETTINGS,
-			(await this.loadData()) as Partial<MyPluginSettings>,
-		);
-	}
+  async refreshIndex() {
+    // Rebuild index from scratch
+    const results = await this.indexer.indexAll(3);
+    console.log(`Semantic index refreshed: ${results.length} files indexed`);
+  }
 
-	async saveSettings() {
-		await this.saveData(this.settings);
-	}
-}
+  async activateView() {
+    const { workspace } = this.app;
+    let leaf: WorkspaceLeaf | null = null;
+    const leaves = workspace.getLeavesOfType(VIEW_TYPE_SEMANTIC);
+    if (leaves.length > 0) {
+      leaf = leaves[0]!;
+    } else {
+      const newLeaf = workspace.getRightLeaf(false);
+      leaf = newLeaf ?? null;
+      if (leaf) await leaf.setViewState({ type: VIEW_TYPE_SEMANTIC, active: true });
+    }
+    if (leaf) workspace.revealLeaf(leaf);
+  }
 
-class SampleModal extends Modal {
-	onOpen() {
-		const { contentEl } = this;
-		contentEl.setText('Woah!');
-	}
+  private async onFileChange(file: any) {
+    if (!file || file.extension !== 'md') return;
+    const debounceMs = this.settings.debounceMs;
+    const key = file.path;
+    if (this.indexer && 'debounceMap' in this) {
+      // simple debounce via setTimeout
+      if ((this as any).debounceTimer) clearTimeout((this as any).debounceTimer);
+      (this as any).debounceTimer = setTimeout(async () => {
+        await this.indexer.indexFile(file);
+      }, debounceMs);
+    }
+  }
 
-	onClose() {
-		const { contentEl } = this;
-		contentEl.empty();
-	}
+  private onFileDelete(file: any) {
+    // TODO: remove from cache
+  }
 }
