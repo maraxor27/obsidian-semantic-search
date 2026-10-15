@@ -1,8 +1,11 @@
+/** Embeddings come from the API as number[] and are stored/hydrated as Float32Array. */
+export type EmbeddingVector = number[] | Float32Array;
+
 export interface EmbeddingChunk {
   id: string;
   text: string;
   headingPath: string;
-  embedding: number[];
+  embedding: EmbeddingVector;
 }
 
 export interface IndexedFile {
@@ -17,7 +20,7 @@ export interface SearchResult {
   score: number;
 }
 
-export function cosineSimilarity(a: number[], b: number[]): number {
+export function cosineSimilarity(a: EmbeddingVector, b: EmbeddingVector): number {
   if (a.length !== b.length) return 0;
   let dot = 0;
   let normA = 0;

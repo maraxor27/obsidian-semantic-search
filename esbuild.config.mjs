@@ -1,5 +1,6 @@
 import esbuild from 'esbuild';
 import process from 'process';
+import fs from 'node:fs';
 import { builtinModules } from 'node:module';
 
 const banner = `/*
@@ -43,7 +44,15 @@ const context = await esbuild.context({
 
 if (prod) {
 	await context.rebuild();
+	copyWasmAsset();
 	process.exit(0);
 } else {
+	await context.rebuild();
+	copyWasmAsset();
 	await context.watch();
+}
+
+/** sql.js loads its SQLite implementation from this WASM file at runtime. */
+function copyWasmAsset() {
+	fs.copyFileSync('node_modules/sql.js/dist/sql-wasm.wasm', 'sql-wasm.wasm');
 }

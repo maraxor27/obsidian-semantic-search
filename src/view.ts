@@ -132,11 +132,10 @@ export class SemanticSearchView extends ItemView {
         new Notice('Embedding API not configured');
         return;
       }
-      // ensure index built
+      // ensure index built (incrementally — usually a no-op)
       const index = this.plugin.indexer.getCache();
       if (index.length === 0) {
-        // build lazily
-        await this.plugin.indexer.indexAll(2);
+        await this.plugin.indexer.reconcile(2);
       }
       const results: SearchResult[] = rankResults(embeddings[0], this.plugin.indexer.getCache(), maxResults, minSimilarity);
       this.renderResults(results);

@@ -2,6 +2,7 @@ import { App, TFile } from 'obsidian';
 import { SemanticSettings } from './settings';
 import { EmbeddingChunk, IndexedFile } from './search';
 import { shouldIndexFile } from './utils/folderFilter';
+import { SqliteIndexStore } from './store';
 
 class TextChunk {
   private _headers: string[];
@@ -49,8 +50,8 @@ interface IndexOp {
 export class Indexer {
   private app: App;
   private settings: SemanticSettings;
+  private store: SqliteIndexStore;
   private cache: Map<string, IndexedFile> = new Map();
-  private embeddingCache: Record<string, IndexedFile> = {};
   private status: IndexStatus = { state: 'idle', done: 0, total: 0 };
   private activeOps = new Map<number, IndexOp>();
   private nextOpId = 1;
@@ -58,9 +59,10 @@ export class Indexer {
   /** Called whenever the index status changes. */
   onStatusChange: ((status: IndexStatus) => void) | null = null;
 
-  constructor(app: App, settings: SemanticSettings) {
+  constructor(app: App, settings: SemanticSettings, store: SqliteIndexStore) {
     this.app = app;
     this.settings = settings;
+    this.store = store;
   }
 
   getStatus(): IndexStatus {
@@ -100,11 +102,15 @@ export class Indexer {
     this.onStatusChange?.(this.status);
   }
 
-  async loadCache(): Promise<void> {
-    // In a real plugin, load from plugin data
-    // For simplicity, start empty
-    this.embeddingCache = {};
-    this.cache.clear();
+  /**
+   * Populate the in-memory search cache from the SQLite store.
+   * Call once after opening the store, before reconciling.
+   */
+  loadFromStore(): void {
+    for (const file of this.store.loadAll()) {
+      this.cache.set(file.path, file);
+    }
+    this.recomputeStatus();
   }
 
   private chunkText(text: string, maxChars: number, overlap: number): TextChunk[] {
@@ -199,14 +205,52 @@ export class Indexer {
     }));
     const indexed: IndexedFile = { path: file.path, mtime: file.stat.mtime, chunks };
     this.cache.set(file.path, indexed);
+    this.store.upsertFile(file.path, file.stat.mtime, chunks);
     return indexed;
   }
 
+  /** Re-embed and replace the entire index. */
   async indexAll(concurrency = 3): Promise<IndexedFile[]> {
-    const queue = this.app.vault.getMarkdownFiles().filter((file) =>
+    const files = this.app.vault.getMarkdownFiles().filter((file) =>
       shouldIndexFile(file, this.settings.includeFolders, this.settings.excludeFolders, this.settings.excludePatterns),
     );
+    this.cache.clear();
+    this.store.clearAll();
+    return this.runPool(files, concurrency);
+  }
+
+  /**
+   * Bring the index in line with the vault: index files that are new or
+   * modified (mtime-based) and drop entries for deleted/excluded files.
+   * No-ops cheaply when everything already matches.
+   */
+  async reconcile(concurrency = 3): Promise<IndexedFile[]> {
+    const files = this.app.vault.getMarkdownFiles().filter((file) =>
+      shouldIndexFile(file, this.settings.includeFolders, this.settings.excludeFolders, this.settings.excludePatterns),
+    );
+    const current = new Map(files.map((file) => [file.path, file]));
+    const stored = this.store.getAllFiles();
+
+    let removedOrphans = false;
+    for (const path of stored.keys()) {
+      if (!current.has(path)) {
+        this.cache.delete(path);
+        this.store.deleteFile(path);
+        removedOrphans = true;
+      }
+    }
+
+    const toIndex = files.filter((file) => stored.get(file.path) !== file.stat.mtime);
+    if (toIndex.length === 0) {
+      if (removedOrphans) this.recomputeStatus(); // refresh the "Index ready (N)" count
+      return [];
+    }
+    return this.runPool(toIndex, concurrency);
+  }
+
+  private async runPool(files: TFile[], concurrency: number): Promise<IndexedFile[]> {
     const results: IndexedFile[] = [];
+    const queue = [...files];
     const opId = this.beginOp(queue.length);
     let processed = 0;
     const workers = Array.from({ length: concurrency }, async () => {
@@ -231,7 +275,7 @@ export class Indexer {
   /** Remove a file from the index (e.g. after deletion or rename). */
   removeFile(path: string): void {
     this.cache.delete(path);
-    delete this.embeddingCache[path];
+    this.store.deleteFile(path);
     if (this.activeOps.size === 0) this.recomputeStatus();
   }
 

@@ -12,11 +12,16 @@ node_modules
 # They should be uploaded to GitHub releases instead.
 main.js
 
+# Copied from node_modules by the build script (release asset).
+sql-wasm.wasm
+
 # Exclude sourcemaps
 *.map
 
 # obsidian
 data.json
+index.sqlite
+index.sqlite.bak
 
 # Exclude macOS Finder (System Explorer) View States
 .DS_Store
