@@ -1,8 +1,10 @@
 import { App, TFile } from 'obsidian';
+import { OpenAIEmbeddingResponse, OpenAIEmbeddingResponseData } from './openai';
 import { SemanticSettings } from './settings';
 import { EmbeddingChunk, IndexedFile } from './search';
 import { shouldIndexFile } from './utils/folderFilter';
 import { SqliteIndexStore } from './store';
+
 
 class TextChunk {
   private _headers: string[];
@@ -33,6 +35,8 @@ class TextChunk {
 }
 
 export type IndexerState = 'idle' | 'indexing';
+
+
 
 export interface IndexStatus {
   state: IndexerState;
@@ -171,8 +175,8 @@ export class Indexer {
         console.error('Embedding API error', resp.status);
         return texts.map(() => []);
       }
-      const data = await resp.json();
-      return data.data?.map((d: any) => d.embedding) ?? [];
+      const data = await resp.json() as OpenAIEmbeddingResponse;
+      return data.data?.map((d: OpenAIEmbeddingResponseData) => d.embedding) ?? [];
     } catch (e) {
       console.error('Embedding fetch error', e);
       return texts.map(() => []);

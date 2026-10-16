@@ -1,6 +1,8 @@
 import { ItemView, WorkspaceLeaf, Notice, setIcon } from 'obsidian';
+import { OpenAIEmbeddingResponse, OpenAIEmbeddingResponseData } from './openai';
 import SemanticPlugin from './main';
 import { rankResults, SearchResult } from './search';
+
 
 export const VIEW_TYPE_SEMANTIC = 'semantic-search-view';
 
@@ -113,9 +115,9 @@ export class SemanticSearchView extends ItemView {
     }
   }
 
-  private async handleQuery() {
+  private handleQuery() {
     if (this.debounceTimer) window.clearTimeout(this.debounceTimer);
-    this.debounceTimer = window.setTimeout(async () => {
+    const handler = async () => {
       const query = this.queryInput.value.trim();
       if (query) {
         this.clearBtn.show();
@@ -139,7 +141,9 @@ export class SemanticSearchView extends ItemView {
       }
       const results: SearchResult[] = rankResults(embeddings[0], this.plugin.indexer.getCache(), maxResults, minSimilarity);
       this.renderResults(results);
-    }, 300);
+    }
+
+    this.debounceTimer = window.setTimeout(() => { void handler()}, 300);
   }
 
   private async fetchEmbedding(texts: string[]): Promise<number[][]> {
@@ -155,8 +159,8 @@ export class SemanticSearchView extends ItemView {
         new Notice('Response NOT ok');
         return texts.map(() => []);
       }
-      const data = await resp.json();
-      return data.data?.map((d: any) => d.embedding) ?? [];
+      const data = await resp.json() as OpenAIEmbeddingResponse;
+      return data.data?.map((d: OpenAIEmbeddingResponseData) => d.embedding) ?? [];
     } catch {
       return texts.map(() => []);
     }
@@ -183,9 +187,9 @@ export class SemanticSearchView extends ItemView {
       const text = r.chunk.text;
       pre.createEl('code', { cls: 'semantic-search-result-snippet', text: text.slice(0, 200) + (text.length > 200 ? '...' : '') });
       el.createEl('small', { cls: 'semantic-search-result-score', text: `Score: ${r.score.toFixed(3)}` });
-      el.addEventListener('click', async () => {
+      el.addEventListener('click', () => {
         const file = this.app.vault.getAbstractFileByPath(r.filePath);
-        if (file) this.app.workspace.openLinkText(file.path, '', false);
+        if (file) void this.app.workspace.openLinkText(file.path, '', false);
       });
     }
   }
